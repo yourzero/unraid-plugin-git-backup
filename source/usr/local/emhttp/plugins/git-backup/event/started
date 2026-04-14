@@ -1,4 +1,11 @@
 #!/bin/bash
-# Re-install cron schedule after Unraid array start.
-# /etc/cron.d/ is tmpfs and wiped on every reboot.
-/usr/local/emhttp/plugins/git-backup/rc.git-backup start
+# Runs after Unraid array start.
+# /etc/ and /root/ are tmpfs — wiped on every reboot.
+
+PLUGDIR="/usr/local/emhttp/plugins/git-backup"
+
+# Restore SSH keys from USB flash to /root/.ssh/
+"$PLUGDIR/scripts/ssh-keygen.sh" install 2>/dev/null
+
+# Re-install cron schedule
+"$PLUGDIR/rc.git-backup" start

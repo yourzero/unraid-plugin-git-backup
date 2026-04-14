@@ -62,9 +62,9 @@ LOG_MAX_SIZE_KB="1024"
 </INLINE>
 </FILE>
 
-<!-- Download plugin archive -->
+<!-- Download plugin archive from GitHub Release -->
 <FILE Name="/tmp/&name;-&version;.txz" Run="upgradepkg --install-new">
-<URL>&repo;/archive/&name;-&version;.txz</URL>
+<URL>https://github.com/yourzero/unraid-plugin-git-backup/releases/download/v&version;/&name;-&version;.txz</URL>
 </FILE>
 
 <!-- Post-install setup -->

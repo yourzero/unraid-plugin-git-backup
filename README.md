@@ -54,26 +54,19 @@ plugin install https://raw.githubusercontent.com/YOUR_USER/unraid-plugin-git-bac
 
 Create a new **private** repository on GitHub/GitLab/Gitea (e.g., `unraid-configs`). This is where your backed-up configs will be pushed — separate from this plugin's source repo.
 
-### 2. Set up SSH key on Unraid
+### 2. Generate SSH key (automatic)
 
-```bash
-# Generate key
-ssh-keygen -t ed25519 -f /root/.ssh/git_backup_key -N ""
+In the plugin settings page (**Settings → Utilities → Git Backup**):
 
-# Configure SSH to use it
-cat >> /root/.ssh/config << 'EOF'
-Host github.com
-    IdentityFile /root/.ssh/git_backup_key
-    StrictHostKeyChecking accept-new
-EOF
+1. Click **Generate Git SSH Key** — the plugin generates an ed25519 key and stores it on the USB flash drive (persistent across reboots)
+2. Copy the public key shown in the popup
+3. Add it to your Git provider (GitHub → Settings → SSH Keys → New SSH Key)
 
-# Copy this public key to your Git provider (GitHub → Settings → SSH Keys)
-cat /root/.ssh/git_backup_key.pub
-```
+> **Note:** Keys are stored on `/boot/config/plugins/git-backup/ssh/` (USB flash) and automatically copied to `/root/.ssh/` on every boot. No manual SSH config needed.
 
 ### 3. Configure the plugin
 
-Go to **Settings → Utilities → Git Backup**:
+In the same settings page:
 
 - **Remote URL**: `git@github.com:YOUR_USER/unraid-configs.git`
 - Adjust any other settings as needed
@@ -115,13 +108,14 @@ Folder name mapping: uppercase, replace `-`, `.`, and spaces with `_`.
 
 ### HAOS Setup
 
-1. Install the **Terminal & SSH** add-on in Home Assistant
-2. Generate and copy an SSH key:
-   ```bash
-   ssh-keygen -t ed25519 -f /root/.ssh/haos_backup_key -N ""
-   ssh-copy-id -i /root/.ssh/haos_backup_key root@homeassistant.local
-   ```
-3. Enable HAOS in the plugin settings and click **Apply**
+1. Install the **Advanced SSH & Web Terminal** add-on in Home Assistant
+2. In the plugin settings, click **Generate HAOS SSH Key**
+3. Copy the public key shown in the popup
+4. In Home Assistant: **Settings → Add-ons → Advanced SSH & Web Terminal → Configuration**
+5. Paste the public key into the **Authorized keys** field
+6. Restart the SSH add-on
+7. Back in the plugin settings, set **Enable HAOS Backup → Yes** and click **Apply**
+8. Click **Dry Run** to verify the SSH connection works
 
 ### Schedule
 

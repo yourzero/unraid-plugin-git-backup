@@ -123,6 +123,19 @@ $repo_initialized = file_exists($cfg['REPO_PATH'] . '/.git');
         <dd><input type="text" name="REMOTE_NAME" value="<?=htmlspecialchars($cfg['REMOTE_NAME'])?>" size="20"></dd>
     </dl>
 
+    <dl>
+        <dt>SSH Key (Git):</dt>
+        <dd>
+            <input type="button" value="Generate Git SSH Key" onclick="generateKey('git')">
+            <input type="button" value="Show Public Key" onclick="showKey('git')">
+        </dd>
+    </dl>
+    <blockquote class="inline_help">
+        <p>Generates an ed25519 SSH key for pushing to your git remote.<br>
+        The key is stored on the USB flash drive and survives reboots.<br>
+        After generating, copy the public key to your Git provider (GitHub/GitLab/Gitea).</p>
+    </blockquote>
+
     <!-- ── Appdata Settings ──────────────────────────────────── -->
     <div class="title"><span class="left">Appdata Backup</span></div>
 
@@ -210,9 +223,21 @@ $repo_initialized = file_exists($cfg['REPO_PATH'] . '/.git');
             <dt>SSH Key Path:</dt>
             <dd><input type="text" name="HAOS_SSH_KEY" value="<?=htmlspecialchars($cfg['HAOS_SSH_KEY'])?>" size="50"></dd>
         </dl>
+
+        <dl>
+            <dt>SSH Key (HAOS):</dt>
+            <dd>
+                <input type="button" value="Generate HAOS SSH Key" onclick="generateKey('haos')">
+                <input type="button" value="Show Public Key" onclick="showKey('haos')">
+            </dd>
+        </dl>
         <blockquote class="inline_help">
-            <p>Generate: <code>ssh-keygen -t ed25519 -f /root/.ssh/haos_backup_key -N ""</code><br>
-            Copy to HAOS: <code>ssh-copy-id -i /root/.ssh/haos_backup_key root@homeassistant.local</code></p>
+            <p>After generating the key, add it to Home Assistant:<br>
+            1. Copy the public key shown after generation<br>
+            2. In HA: <strong>Settings &rarr; Add-ons &rarr; Advanced SSH &amp; Web Terminal &rarr; Configuration</strong><br>
+            3. Paste the key into the <strong>Authorized keys</strong> field<br>
+            4. Restart the SSH add-on<br>
+            5. Come back here and run a Dry Run to test the connection</p>
         </blockquote>
 
         <dl>
@@ -320,19 +345,34 @@ function prepareSubmit() {
     });
 }
 
+// Helper: all script execution goes through the PHP wrapper.
+// openBox loads URLs — it does NOT execute commands directly.
+function pluginExec(script, args, title, w, h) {
+    var url = '/plugins/git-backup/include/exec.php?script=' +
+        encodeURIComponent(script) + '&args=' + encodeURIComponent(args || '');
+    openBox(url, title, w || 800, h || 600, true);
+}
+
 function runBackup(args) {
-    openBox('/plugins/git-backup/scripts/backup.sh ' + args,
-            'Git Backup', 800, 600, true);
+    pluginExec('backup.sh', args, 'Git Backup');
 }
 
 function initRepo() {
-    openBox('/plugins/git-backup/scripts/init-repo.sh',
-            'Initialize Repository', 700, 500, true);
+    pluginExec('init-repo.sh', '', 'Initialize Repository', 700, 500);
 }
 
 function viewLog() {
     var logFile = '<?=htmlspecialchars($cfg['LOG_FILE'])?>';
-    openBox('/usr/bin/tail -100 ' + logFile,
-            'Git Backup Log', 800, 600, true);
+    // tail is a system command, use exec.php would need whitelisting.
+    // Instead, read the log via PHP directly.
+    openBox('/plugins/git-backup/include/viewlog.php', 'Git Backup Log', 800, 600, true);
+}
+
+function generateKey(type) {
+    pluginExec('ssh-keygen.sh', type, 'Generate SSH Key (' + type + ')', 700, 500);
+}
+
+function showKey(type) {
+    pluginExec('ssh-keygen.sh', 'show ' + type, 'SSH Public Key (' + type + ')', 700, 300);
 }
 </script>
