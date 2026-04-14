@@ -1,0 +1,22 @@
+# Build artifacts
+archive/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Unraid test artifacts
+*.txz
+
+# Zip of compose files (user-specific)
+compose-files.zip
+
+# Claude session files
+.claude/
