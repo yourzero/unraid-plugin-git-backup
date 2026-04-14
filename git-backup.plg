@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name      "git-backup">
   <!ENTITY author    "yourzero">
-  <!ENTITY version   "2026.04.14.3">
+  <!ENTITY version   "2026.04.14.4">
   <!ENTITY repo      "https://raw.githubusercontent.com/yourzero/unraid-plugin-git-backup/main">
   <!ENTITY plugdir   "/usr/local/emhttp/plugins/&name;">
   <!ENTITY cfgdir    "/boot/config/plugins/&name;">
