@@ -27,6 +27,7 @@ ERRORS=0
 VERBOSE="no"
 CONTAINERS_BACKED_UP=0
 FILES_SYNCED=0
+TOTAL_DRY_RUN_SIZE=0
 
 # ── Logging ───────────────────────────────────────────────────────
 log() {
@@ -37,6 +38,16 @@ log() {
 
 log_verbose() {
     [ "$VERBOSE" = "yes" ] && log "  $*"
+}
+
+# ── Human-Readable Bytes ─────────────────────────────────────────
+format_bytes() {
+    local bytes=${1:-0}
+    if   [ "$bytes" -lt 1024 ];                    then echo "${bytes} B"
+    elif [ "$bytes" -lt $((1024 * 1024)) ];        then echo "$(( bytes / 1024 )) KB"
+    elif [ "$bytes" -lt $((1024 * 1024 * 1024)) ]; then echo "$(( bytes / 1024 / 1024 )) MB"
+    else                                                 echo "$(( bytes / 1024 / 1024 / 1024 )) GB"
+    fi
 }
 
 # ── Lock Management (atomic via flock) ───────────────────────────
@@ -272,7 +283,9 @@ backup_single_container() {
         done
     fi
 
-    [ "$DRY_RUN" = "yes" ] && rsync_args+=(--dry-run)
+    if [ "$DRY_RUN" = "yes" ]; then
+        rsync_args+=(--dry-run --stats)
+    fi
 
     local output rsync_rc=0
     output=$(rsync "${rsync_args[@]}" "$src" "$dest" 2>&1) || rsync_rc=$?
@@ -281,8 +294,20 @@ backup_single_container() {
         ERRORS=$((ERRORS + 1))
     fi
 
-    # Parse rsync verbose output: strip header/summary lines to isolate file paths
-    # rsync -v outputs: "sending incremental...", blank, "sent N bytes...", "total size..."
+    # Extract per-container transferred size from --stats output (dry-run only)
+    local transferred_bytes=0
+    if [ "$DRY_RUN" = "yes" ] && [ -n "$output" ]; then
+        local size_line
+        size_line=$(printf '%s\n' "$output" | grep "^Total transferred file size:") || true
+        if [ -n "$size_line" ]; then
+            transferred_bytes=$(printf '%s\n' "$size_line" | grep -oE '[0-9,]+' | head -1 | tr -d ',') || true
+            transferred_bytes=${transferred_bytes:-0}
+        fi
+        TOTAL_DRY_RUN_SIZE=$((TOTAL_DRY_RUN_SIZE + transferred_bytes))
+    fi
+
+    # Parse rsync verbose output: strip header/summary/stats lines to isolate file paths.
+    # rsync --stats adds lines starting with Number/Total/Literal/Matched/File list.
     local files_only=""
     if [ -n "$output" ]; then
         files_only=$(printf '%s\n' "$output" \
@@ -290,7 +315,12 @@ backup_single_container() {
             | grep -v '^sending ' \
             | grep -v '^sent ' \
             | grep -v '^total size' \
-            | grep -v '^cannot ') || true
+            | grep -v '^cannot ' \
+            | grep -v '^Number of ' \
+            | grep -v '^Total ' \
+            | grep -v '^Literal ' \
+            | grep -v '^Matched ' \
+            | grep -v '^File list') || true
     fi
 
     local file_count=0
@@ -298,7 +328,9 @@ backup_single_container() {
 
     if [ "$DRY_RUN" = "yes" ] || [ "$VERBOSE" = "yes" ]; then
         if [ "$file_count" -gt 0 ]; then
-            log "    $file_count file(s):"
+            local size_label=""
+            [ "$DRY_RUN" = "yes" ] && size_label=" — $(format_bytes "$transferred_bytes")"
+            log "    $file_count file(s)${size_label}:"
             while IFS= read -r fline; do
                 [ -n "$fline" ] && echo "      $fline"
             done <<< "$files_only"
@@ -567,10 +599,11 @@ show_dry_run_summary() {
     echo "  DRY RUN COMPLETE — No changes were made"
     echo "════════════════════════════════════════════"
     echo ""
-    echo "Containers scanned: $CONTAINERS_BACKED_UP"
-    echo "Repo path: $REPO_PATH"
-    [ "$HAOS_ENABLED" = "yes" ] && echo "HAOS: enabled (host: $HAOS_HOST)"
-    [ "$HAOS_FAILED" -eq 1 ] && echo "HAOS: FAILED to connect"
+    echo "Containers scanned:   $CONTAINERS_BACKED_UP"
+    echo "Estimated total size: $(format_bytes "$TOTAL_DRY_RUN_SIZE")"
+    echo "Repo path:            $REPO_PATH"
+    [ "$HAOS_ENABLED" = "yes" ] && echo "HAOS:                 enabled (host: $HAOS_HOST)"
+    [ "$HAOS_FAILED" -eq 1 ]    && echo "HAOS:                 FAILED to connect"
     echo ""
     echo "Remove --dry-run to perform the actual backup."
 }
