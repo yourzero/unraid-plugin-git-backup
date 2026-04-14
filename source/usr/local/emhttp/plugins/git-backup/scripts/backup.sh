@@ -130,7 +130,8 @@ folder_to_key() {
 }
 
 # ── Three-Tier Rule Resolution ───────────────────────────────────
-# Sets: CONTAINER_MODE ("include" or "exclude")
+# Sets: CONTAINER_TIER  ("override" | "knowledge-base" | "global")
+#       CONTAINER_MODE  ("include" or "exclude")
 #       CONTAINER_INCLUDE (comma-separated)
 #       CONTAINER_EXCLUDE (comma-separated)
 resolve_container_rules() {
@@ -143,6 +144,7 @@ resolve_container_rules() {
     local override_exclude_var="OVERRIDE_${folder_key}_EXCLUDE"
 
     if [ -n "${!override_include_var:-}" ] || [ -n "${!override_exclude_var:-}" ]; then
+        CONTAINER_TIER="override"
         log_verbose "Rules: user override for $folder"
         if [ -n "${!override_include_var:-}" ]; then
             CONTAINER_MODE="include"
@@ -162,6 +164,7 @@ resolve_container_rules() {
             # Case-insensitive folder match
             if [ -n "$kb_folder" ] && [ "${folder,,}" = "${kb_folder,,}" ]; then
                 log_verbose "Rules: knowledge base match '$kb_name'"
+                CONTAINER_TIER="knowledge-base"
                 if [ -n "$kb_include" ]; then
                     CONTAINER_MODE="include"
                     CONTAINER_INCLUDE="$kb_include"
@@ -177,6 +180,7 @@ resolve_container_rules() {
     fi
 
     # --- Tier 1: Global defaults (lowest priority) ---
+    CONTAINER_TIER="global"
     log_verbose "Rules: global defaults"
     CONTAINER_MODE="exclude"
     CONTAINER_INCLUDE=""
@@ -229,7 +233,7 @@ backup_single_container() {
         IFS=',' read -ra skip_list <<< "$SKIP_CONTAINERS"
         for skip in "${skip_list[@]}"; do
             [ "$(echo "$skip" | tr -d ' ')" = "$folder" ] && {
-                log_verbose "Skipped: $folder (in skip list)"
+                log_verbose "  [$folder] skipped (in skip list)"
                 return 0
             }
         done
@@ -240,10 +244,16 @@ backup_single_container() {
 
     resolve_container_rules "$folder"
 
+    # Always log container + which rule tier matched
+    log "  [$folder] tier=$CONTAINER_TIER mode=$CONTAINER_MODE"
+    if ( [ "$DRY_RUN" = "yes" ] || [ "$VERBOSE" = "yes" ] ) && [ "$CONTAINER_MODE" = "include" ]; then
+        log "    patterns: $CONTAINER_INCLUDE"
+    fi
+
     mkdir -p "$dest"
 
-    # Build rsync command
-    local rsync_args=(-a --delete --max-size="${MAX_FILE_SIZE_KB}K")
+    # Build rsync command — always use -v so we can capture/count synced files
+    local rsync_args=(-av --delete --max-size="${MAX_FILE_SIZE_KB}K")
 
     if [ "$CONTAINER_MODE" = "include" ]; then
         # Allowlist mode: include specific patterns, exclude everything else
@@ -262,20 +272,44 @@ backup_single_container() {
         done
     fi
 
-    if [ "$DRY_RUN" = "yes" ]; then
-        rsync_args+=(--dry-run -v)
-    elif [ "$VERBOSE" = "yes" ]; then
-        rsync_args+=(-v)
+    [ "$DRY_RUN" = "yes" ] && rsync_args+=(--dry-run)
+
+    local output rsync_rc=0
+    output=$(rsync "${rsync_args[@]}" "$src" "$dest" 2>&1) || rsync_rc=$?
+    if [ "$rsync_rc" -ne 0 ]; then
+        log "    WARNING: rsync exited with code $rsync_rc"
+        ERRORS=$((ERRORS + 1))
     fi
 
-    local output
-    output=$(rsync "${rsync_args[@]}" "$src" "$dest" 2>&1) || true
+    # Parse rsync verbose output: strip header/summary lines to isolate file paths
+    # rsync -v outputs: "sending incremental...", blank, "sent N bytes...", "total size..."
+    local files_only=""
+    if [ -n "$output" ]; then
+        files_only=$(printf '%s\n' "$output" \
+            | grep -v '^$' \
+            | grep -v '^sending ' \
+            | grep -v '^sent ' \
+            | grep -v '^total size' \
+            | grep -v '^cannot ') || true
+    fi
 
-    if [ "$VERBOSE" = "yes" ] || [ "$DRY_RUN" = "yes" ]; then
-        # Show first 20 lines of output if non-empty
-        # Use <<< to avoid broken pipe from echo|head with pipefail
-        if [ -n "$output" ]; then
-            head -20 <<< "$output" || true
+    local file_count=0
+    [ -n "$files_only" ] && file_count=$(printf '%s\n' "$files_only" | wc -l | tr -d ' ')
+
+    if [ "$DRY_RUN" = "yes" ] || [ "$VERBOSE" = "yes" ]; then
+        if [ "$file_count" -gt 0 ]; then
+            log "    $file_count file(s):"
+            while IFS= read -r fline; do
+                [ -n "$fline" ] && echo "      $fline"
+            done <<< "$files_only"
+        else
+            log "    (nothing to sync)"
+        fi
+    else
+        if [ "$file_count" -gt 0 ]; then
+            log "    $file_count file(s) synced"
+        else
+            log_verbose "    (nothing to sync)"
         fi
     fi
 
@@ -291,7 +325,6 @@ backup_appdata() {
         [ -d "$dir" ] || continue
         local folder
         folder=$(basename "$dir")
-        log_verbose "Processing: $folder"
         backup_single_container "$folder"
         count=$((count + 1))
     done
@@ -346,16 +379,26 @@ backup_haos() {
     local dest="$REPO_PATH/haos/"
     mkdir -p "$dest"
 
-    # Test SSH connectivity first
-    if ! ssh -o ConnectTimeout=10 -o BatchMode=yes \
+    # Test SSH connectivity first — capture error output for diagnostics
+    local ssh_test_output
+    ssh_test_output=$(ssh -v -o ConnectTimeout=10 -o BatchMode=yes \
          -p "$HAOS_PORT" -i "$HAOS_SSH_KEY" \
-         "$HAOS_USER@$HAOS_HOST" "echo ok" &>/dev/null; then
+         "$HAOS_USER@$HAOS_HOST" "echo ok" 2>&1) || {
         log "ERROR: Cannot SSH to HAOS at $HAOS_USER@$HAOS_HOST:$HAOS_PORT"
-        log "  Check: SSH key ($HAOS_SSH_KEY), host ($HAOS_HOST), port ($HAOS_PORT)"
+        log "  SSH output:"
+        # Show the most useful lines from SSH verbose output
+        echo "$ssh_test_output" | grep -iE "(connect|error|denied|refused|timeout|no such|key|auth|resolv|host)" | while read -r line; do
+            log "    $line"
+        done
+        # Also check if the key file exists
+        if [ ! -f "$HAOS_SSH_KEY" ]; then
+            log "  SSH key file NOT FOUND: $HAOS_SSH_KEY"
+            log "  Generate one: click 'Generate HAOS SSH Key' in the settings page"
+        fi
         HAOS_FAILED=1
         ERRORS=$((ERRORS + 1))
         return 0  # Continue with other backups
-    fi
+    }
 
     # Build rsync args
     local rsync_args=(-az --delete

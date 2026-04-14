@@ -1,27 +1,35 @@
 <?PHP
-/* viewlog.php — Display the last 100 lines of the backup log.
- *
- * Note: parse_plugin_cfg() is only available inside Unraid's .page framework.
- * Standalone PHP files loaded via openBox must read config directly.
- */
+/* viewlog.php — Display the backup log. Full page, not an openBox fragment. */
 $cfgFile = "/boot/config/plugins/git-backup/git-backup.cfg";
-$logFile = "/var/log/git-backup.log";  // default
+$logFile = "/var/log/git-backup.log"; // default
 
-// Parse LOG_FILE from INI config
 if (file_exists($cfgFile)) {
     $ini = parse_ini_file($cfgFile);
-    if (!empty($ini['LOG_FILE'])) {
-        $logFile = $ini['LOG_FILE'];
-    }
+    if (!empty($ini['LOG_FILE'])) $logFile = $ini['LOG_FILE'];
 }
-
-header('Content-Type: text/html; charset=utf-8');
-echo "<pre>";
+?>
+<html>
+<head>
+<title>Git Backup — Log</title>
+<style>
+body { background: #1a1a2e; color: #e0e0e0; font-family: 'Courier New', monospace; font-size: 13px; padding: 15px; margin: 0; }
+pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
+.header { color: #ff9800; border-bottom: 1px solid #333; padding-bottom: 8px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<pre>
+<span class="header">Log: <?=htmlspecialchars($logFile)?> (last 200 lines)</span>
+<?PHP
 if (file_exists($logFile)) {
-    passthru("tail -100 " . escapeshellarg($logFile));
+    $lines = file($logFile);
+    $tail = array_slice($lines, -200);
+    echo htmlspecialchars(implode('', $tail));
 } else {
     echo "No log file found at: $logFile\n";
     echo "Run a backup first to generate the log.";
 }
-echo "</pre>";
 ?>
+</pre>
+</body>
+</html>

@@ -345,12 +345,13 @@ function prepareSubmit() {
     });
 }
 
-// Helper: all script execution goes through the PHP wrapper.
-// openBox loads URLs — it does NOT execute commands directly.
+// Opens a popup window that runs a script with real-time output streaming.
+// Uses window.open() instead of openBox for reliable cross-version compatibility.
 function pluginExec(script, args, title, w, h) {
     var url = '/plugins/git-backup/include/exec.php?script=' +
         encodeURIComponent(script) + '&args=' + encodeURIComponent(args || '');
-    openBox(url, title, w || 800, h || 600, true);
+    window.open(url, 'git_backup_exec', 'width=' + (w||800) + ',height=' + (h||600) +
+        ',scrollbars=yes,resizable=yes');
 }
 
 function runBackup(args) {
@@ -362,10 +363,8 @@ function initRepo() {
 }
 
 function viewLog() {
-    var logFile = '<?=htmlspecialchars($cfg['LOG_FILE'])?>';
-    // tail is a system command, use exec.php would need whitelisting.
-    // Instead, read the log via PHP directly.
-    openBox('/plugins/git-backup/include/viewlog.php', 'Git Backup Log', 800, 600, true);
+    window.open('/plugins/git-backup/include/viewlog.php', 'git_backup_log',
+        'width=800,height=600,scrollbars=yes,resizable=yes');
 }
 
 function generateKey(type) {
