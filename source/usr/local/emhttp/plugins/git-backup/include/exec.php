@@ -1,16 +1,10 @@
 <?PHP
-/* exec.php — Execute plugin scripts and stream output to openBox dialog.
+/* exec.php — Execute plugin scripts for openBox dialog.
  *
- * Unraid's openBox() loads a URL in an iframe. It does NOT execute commands.
- * This PHP wrapper bridges that gap: openBox loads this page, which runs
- * the script via passthru() and streams stdout/stderr to the browser.
- *
- * Usage (from JavaScript):
- *   openBox('/plugins/git-backup/include/exec.php?script=backup.sh&args=--dry-run',
- *           'Title', 800, 600, true);
+ * Unraid's openBox() uses $.get() which waits for the full response.
+ * We capture all output with shell_exec() and return it at once.
  */
 
-// Whitelist of scripts that can be executed
 $allowed_scripts = [
     'backup.sh',
     'init-repo.sh',
@@ -22,23 +16,18 @@ $plugdir = "/usr/local/emhttp/plugins/$plugin";
 $script = basename($_GET['script'] ?? '');
 $args = $_GET['args'] ?? '';
 
-// Validate script name against whitelist
 if (!in_array($script, $allowed_scripts)) {
-    echo "Error: unknown script '$script'";
+    echo "<pre>Error: unknown script '$script'</pre>";
     exit(1);
 }
 
 // Sanitize args — only allow known safe characters
 $args = preg_replace('/[^a-zA-Z0-9 _\-\.\/]/', '', $args);
 
-$cmd = "$plugdir/scripts/$script $args";
+$cmd = "$plugdir/scripts/$script $args 2>&1";
+$output = shell_exec($cmd);
 
-header('Content-Type: text/html; charset=utf-8');
 echo "<pre>";
-flush();
-
-// Execute and stream output in real-time
-passthru("$cmd 2>&1");
-
+echo htmlspecialchars($output ?: "(no output — script may have exited early)");
 echo "</pre>";
 ?>
