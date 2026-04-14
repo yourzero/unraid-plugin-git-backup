@@ -1,0 +1,118 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN [
+  <!ENTITY name      "git-backup">
+  <!ENTITY author    "justinbacic">
+  <!ENTITY version   "2026.04.13">
+  <!ENTITY repo      "https://raw.githubusercontent.com/justinbacic/unraid-plugin-git-backup/main">
+  <!ENTITY plugdir   "/usr/local/emhttp/plugins/&name;">
+  <!ENTITY cfgdir    "/boot/config/plugins/&name;">
+]>
+
+<PLUGIN name="&name;" author="&author;" version="&version;"
+  pluginURL="&repo;/git-backup.plg"
+  min="6.12.0"
+  icon="clone"
+  support="https://github.com/justinbacic/unraid-plugin-git-backup/issues">
+
+<CHANGES>
+###&version;
+- Initial release
+- Back up Docker container config files (appdata) with smart rules
+- Back up Docker Compose files
+- Back up Home Assistant OS config via SSH
+- Back up Unraid system config files
+- Git commit and push on schedule
+- Built-in knowledge base for 22+ common containers
+- Three-tier priority: global defaults &lt; knowledge base &lt; user overrides
+- Dry run mode for previewing backups
+- Unraid notifications on success/failure
+</CHANGES>
+
+<!-- Default config (only created if not already present) -->
+<FILE Name="&cfgdir;/&name;.cfg">
+<INLINE>
+<![CDATA[
+REPO_PATH="/mnt/user/appdata/git-config-backup"
+REMOTE_URL=""
+REMOTE_NAME="origin"
+BRANCH="main"
+COMMIT_PREFIX="backup:"
+PUSH_AFTER_COMMIT="yes"
+APPDATA_PATH="/mnt/user/appdata"
+MAX_FILE_SIZE_KB="500"
+SKIP_CONTAINERS=""
+GLOBAL_EXCLUDE="*.db,*.db-shm,*.db-wal,*.sqlite,*.sqlite3,*.sqlite-journal,*.log,*.log.*,logs/**,log/**,cache/**,Cache/**,CacheClip/**,tmp/**,temp/**,thumbnails/**,Thumbnails/**,Metadata/**,metadata/**,*.jpg,*.jpeg,*.png,*.gif,*.bmp,*.webp,*.mp4,*.mkv,*.avi,*.mp3,*.flac,*.sock,*.pid,*.lock,node_modules/**,__pycache__/**,.git/**,Plug-in Support/**,Crash Reports/**,Codecs/**,Updates/**,Diagnostics/**,Media/**"
+COMPOSE_ENABLED="yes"
+COMPOSE_PATH="/boot/config/plugins/compose.manager/projects"
+HAOS_ENABLED="no"
+HAOS_HOST="homeassistant.local"
+HAOS_PORT="22"
+HAOS_USER="root"
+HAOS_SSH_KEY="/root/.ssh/haos_backup_key"
+HAOS_INCLUDE="/config/configuration.yaml,/config/automations.yaml,/config/scripts.yaml,/config/scenes.yaml,/config/secrets.yaml,/config/customize.yaml,/config/known_devices.yaml,/config/groups.yaml,/config/packages/**,/config/custom_components/**,/config/blueprints/**,/config/www/**,/config/themes/**,/config/.storage/core.config_entries,/config/.storage/core.device_registry,/config/.storage/core.entity_registry,/config/.storage/core.area_registry,/config/.storage/lovelace*"
+HAOS_EXCLUDE="/config/home-assistant_v2.db,/config/home-assistant_v2.db-shm,/config/home-assistant_v2.db-wal,/config/tts/**,/config/deps/**,/config/.cloud/**,/config/backups/**"
+UNRAID_ENABLED="yes"
+UNRAID_PATHS="/boot/config/go,/boot/config/network.cfg,/boot/config/ident.cfg,/boot/config/disk.cfg,/boot/config/share.cfg,/boot/config/smb-extra.conf,/boot/config/syslinux/syslinux.cfg"
+CRON_SCHEDULE="0 3 * * *"
+DRY_RUN="no"
+NOTIFICATION="yes"
+LOG_FILE="/var/log/git-backup.log"
+LOG_MAX_SIZE_KB="1024"
+]]>
+</INLINE>
+</FILE>
+
+<!-- Download plugin archive -->
+<FILE Name="/tmp/&name;-&version;.txz" Run="upgradepkg --install-new">
+<URL>&repo;/archive/&name;-&version;.txz</URL>
+</FILE>
+
+<!-- Post-install setup -->
+<FILE Run="/bin/bash">
+<INLINE>
+# Create config directory
+mkdir -p &cfgdir;
+
+# Set permissions
+chmod +x &plugdir;/scripts/*.sh
+chmod +x &plugdir;/rc.&name;
+chmod +x &plugdir;/event/*
+
+# Create log directory
+touch /var/log/git-backup.log
+
+# Install cron schedule
+&plugdir;/rc.&name; start
+
+# Cleanup
+rm -f /tmp/&name;-&version;.txz
+
+echo ""
+echo "-----------------------------------------------------------"
+echo " &name; v&version; installed successfully"
+echo " Configure at Settings > Utilities > Git Backup"
+echo "-----------------------------------------------------------"
+echo ""
+</INLINE>
+</FILE>
+
+<!-- Uninstall -->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+# Remove cron
+&plugdir;/rc.&name; stop 2>/dev/null
+
+# Remove plugin files (but NOT config on USB flash)
+rm -rf &plugdir;
+
+echo ""
+echo "-----------------------------------------------------------"
+echo " &name; removed"
+echo " Config preserved at &cfgdir;/&name;.cfg"
+echo " Backup repo preserved (if it exists)"
+echo "-----------------------------------------------------------"
+echo ""
+</INLINE>
+</FILE>
+
+</PLUGIN>

@@ -1,0 +1,73 @@
+/* git-backup plugin styles */
+
+/* Status banner */
+.notice {
+    padding: 10px 15px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+.notice.shift {
+    background: #e8f5e9;
+    border: 1px solid #4caf50;
+    color: #2e7d32;
+}
+.notice.alert {
+    background: #fff3e0;
+    border: 1px solid #ff9800;
+    color: #e65100;
+}
+
+/* Form layout */
+dl {
+    margin: 8px 0;
+}
+dt {
+    width: 200px;
+    display: inline-block;
+    text-align: right;
+    padding-right: 15px;
+    vertical-align: top;
+    padding-top: 4px;
+}
+dd {
+    display: inline-block;
+    vertical-align: top;
+}
+
+/* Textarea styling */
+textarea {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    resize: vertical;
+}
+
+/* Section titles */
+.title {
+    border-bottom: 1px solid #ccc;
+    margin: 20px 0 10px 0;
+    padding-bottom: 5px;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* Buttons */
+input[type="submit"],
+input[type="button"] {
+    margin-right: 8px;
+    margin-top: 10px;
+}
+
+/* Help text */
+blockquote.inline_help {
+    margin: 2px 0 8px 216px;
+    padding: 4px 10px;
+    color: #666;
+    font-size: 12px;
+    display: none;
+}
+blockquote.inline_help p {
+    margin: 2px 0;
+}

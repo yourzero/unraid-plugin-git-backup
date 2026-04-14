@@ -1,0 +1,276 @@
+# container-knowledge.yml
+# Static database of known Docker container config file locations.
+# Used by the backup script to make smart decisions about what to back up.
+#
+# Each entry maps a container "match" (by image name substring or appdata folder name)
+# to include/exclude rules that override the global convention.
+#
+# Fields:
+#   match_image:   substring matched against the container's Docker image name
+#   match_folder:  substring matched against the appdata folder name (case-insensitive)
+#   include:       list of globs — ONLY these files/dirs are backed up (overrides global)
+#   exclude:       list of globs — these are excluded ON TOP of global excludes
+#   notes:         human-readable explanation
+#
+# When both include and exclude are set, include takes priority (allowlist mode).
+# When only exclude is set, everything except excludes is backed up (denylist mode).
+
+containers:
+
+  # ── Media Servers ──────────────────────────────────────────────
+
+  - name: plex
+    match_image: plexinc/pms-docker
+    match_folder: Plex-Media-Server
+    include:
+      - "Library/Application Support/Plex Media Server/Preferences.xml"
+    notes: >
+      Preferences.xml is the only critical config. Everything else
+      (Metadata/, Cache/, Media/, Codecs/) is regeneratable and massive.
+
+  - name: jellyfin
+    match_image: jellyfin/jellyfin
+    match_folder: Jellyfin
+    exclude:
+      - "cache/**"
+      - "log/**"
+      - "metadata/**"
+      - "data/data/**"
+      - "data/metadata/**"
+      - "data/subtitles/**"
+      - "transcodes/**"
+      - "*.db"
+      - "*.db-shm"
+      - "*.db-wal"
+    notes: >
+      Jellyfin config includes network.xml, system.xml, encoding.xml, etc.
+      The database and cache dirs are large and regeneratable.
+
+  # ── *arr Suite ─────────────────────────────────────────────────
+
+  - name: radarr
+    match_image: "radarr"
+    match_folder: radarr
+    include:
+      - "config.xml"
+      - "*.xml"
+    notes: >
+      config.xml has API keys, auth, download client settings.
+      The .db files contain movie history (large, less critical).
+
+  - name: radarr-4k
+    match_folder: radarr-4k
+    include:
+      - "config.xml"
+      - "*.xml"
+    notes: Same as radarr but separate 4K instance.
+
+  - name: sonarr
+    match_image: "sonarr"
+    match_folder: sonarr
+    include:
+      - "config.xml"
+      - "*.xml"
+    notes: Same pattern as radarr.
+
+  - name: prowlarr
+    match_image: "prowlarr"
+    match_folder: binhex-prowlarr
+    include:
+      - "Prowlarr/config.xml"
+      - "Prowlarr/*.xml"
+    notes: >
+      binhex wraps prowlarr in a Prowlarr/ subdir.
+
+  - name: profilarr
+    match_image: "profilarr"
+    match_folder: Profilarr
+    exclude:
+      - "*.db"
+      - "*.db-shm"
+      - "*.db-wal"
+      - "logs/**"
+    notes: Profilarr config management tool. Back up git repo + settings.
+
+  # ── Downloaders ────────────────────────────────────────────────
+
+  - name: sabnzbd
+    match_image: "sabnzbd"
+    match_folder: sabnzbd
+    include:
+      - "sabnzbd.ini"
+      - "*.conf"
+    notes: >
+      sabnzbd.ini has all settings including server credentials.
+      The admin/ and Downloads/ dirs are transient.
+
+  - name: qbittorrent
+    match_image: "qbittorrentvpn"
+    match_folder: qbittorrentvpn
+    include:
+      - "qBittorrent/qBittorrent.conf"
+      - "qBittorrent/qBittorrent-data.conf"
+      - "qBittorrent/watched_folders.json"
+      - "wireguard/**"
+      - "openvpn/**"
+      - "privoxy/**"
+    exclude:
+      - "qBittorrent/BT_backup/**"
+      - "qBittorrent/data/**"
+      - "qBittorrent/logs/**"
+      - "qBittorrent/GeoDB/**"
+    notes: >
+      VPN configs (wireguard/openvpn dirs) are critical.
+      BT_backup holds torrent resume data (large, not config).
+
+  # ── Home Automation ────────────────────────────────────────────
+
+  - name: zigbee2mqtt
+    match_image: "zigbee2mqtt"
+    match_folder: zigbee2mqtt
+    include:
+      - "configuration.yaml"
+      - "devices.yaml"
+      - "groups.yaml"
+      - "secret.yaml"
+      - "state.json"
+    notes: >
+      These YAML files define the entire zigbee network.
+      state.json holds device states (small, useful for restore).
+
+  - name: zwave-js-ui
+    match_image: "zwave-js-ui"
+    match_folder: zwave-js-ui
+    include:
+      - "settings.json"
+      - "scenes.json"
+      - "snippet*"
+      - "*.json"
+    exclude:
+      - "backups/**"
+    notes: >
+      JSON configs define the Z-Wave network. The backups/ dir
+      has its own backup mechanism.
+
+  - name: mosquitto
+    match_image: "mosquitto"
+    match_folder: mosquitto
+    include:
+      - "config/**"
+    exclude:
+      - "data/**"
+      - "log/**"
+    notes: >
+      config/mosquitto.conf and any ACL/password files.
+      data/ has the persistence DB, log/ has logs.
+
+  # ── Proxy / Network ───────────────────────────────────────────
+
+  - name: nginx-proxy-manager
+    match_image: "nginx-proxy-manager"
+    match_folder: NginxProxyManager
+    exclude:
+      - "*.db"
+      - "*.db-shm"
+      - "*.db-wal"
+      - "log/**"
+      - "letsencrypt/live/**/fullchain.pem"
+      - "letsencrypt/live/**/privkey.pem"
+      - "letsencrypt/archive/**"
+    notes: >
+      Nginx configs and proxy host definitions are in JSON/conf files.
+      The SQLite DB is large. SSL certs/keys are excluded by default
+      for security — add them in overrides if you want them backed up.
+
+  # ── Photos ─────────────────────────────────────────────────────
+
+  - name: immich-imagegenius
+    match_image: "imagegenius/immich"
+    match_folder: immich
+    exclude:
+      - "*.db"
+      - "*.db-shm"
+      - "*.db-wal"
+      - "log/**"
+      - "machine-learning/**"
+      - "thumbs/**"
+      - "encoded-video/**"
+    notes: >
+      imagegenius immich stores config as JSON/YAML files.
+      ML models, thumbnails, and encoded video are regeneratable.
+
+  - name: deepstack
+    match_image: "deepstack"
+    match_folder: deepstack
+    exclude:
+      - "custom_models/**"
+    notes: >
+      Custom models can be huge. Core config is small.
+      Add custom_models back in overrides if you trained custom models.
+
+  # ── Media Management ───────────────────────────────────────────
+
+  - name: tdarr
+    match_image: "tdarr"
+    match_folder: tdarr
+    include:
+      - "configs/**"
+    exclude:
+      - "server/**"
+      - "logs/**"
+    notes: >
+      configs/ has the transcode rules and settings.
+      server/ has the node DB and cache.
+
+  - name: youtube-dl-material
+    match_image: "youtubedl-material"
+    match_folder: youtubedl-material
+    exclude:
+      - "audio/**"
+      - "video/**"
+      - "subscriptions/**"
+    notes: Config and settings only, skip downloaded media.
+
+  - name: youtube-dl
+    match_image: "youtube-dl"
+    match_folder: youtube-dl
+    exclude:
+      - "downloads/**"
+    notes: Config files only.
+
+  # ── Utilities ──────────────────────────────────────────────────
+
+  - name: duplicacy
+    match_image: "duplicacy"
+    match_folder: Duplicacy
+    exclude:
+      - "cache/**"
+      - "logs/**"
+    notes: >
+      Duplicacy config includes storage definitions and schedules.
+      Cache is transient. Logs are not needed.
+
+  - name: homarr
+    match_image: "homarr"
+    match_folder: homarr
+    exclude:
+      - "*.db"
+      - "*.db-shm"
+      - "*.db-wal"
+    notes: Dashboard config and icons.
+
+  - name: apprise
+    match_image: "apprise"
+    match_folder: apprise
+    exclude: []
+    notes: Small config dir, back up everything.
+
+  # ── Immich (official docker-compose) ───────────────────────────
+
+  - name: immich-official
+    match_image: "immich-app/immich-server"
+    match_folder: null
+    include: []
+    notes: >
+      Official Immich uses .env + docker-compose.yml only.
+      No appdata mount — config is captured via compose file backup.

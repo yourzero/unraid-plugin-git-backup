@@ -1,0 +1,338 @@
+Menu="Utilities"
+Title="Git Backup"
+Icon="icon-clone"
+---
+<?PHP
+/* git-backup settings page for Unraid */
+
+$plugin = "git-backup";
+$plugdir = "/usr/local/emhttp/plugins/$plugin";
+$cfgfile = "/boot/config/plugins/$plugin/$plugin.cfg";
+
+// Load config with defaults
+$defaults = [
+    'REPO_PATH'          => '/mnt/user/appdata/git-config-backup',
+    'REMOTE_URL'          => '',
+    'REMOTE_NAME'         => 'origin',
+    'BRANCH'              => 'main',
+    'COMMIT_PREFIX'       => 'backup:',
+    'PUSH_AFTER_COMMIT'   => 'yes',
+    'APPDATA_PATH'        => '/mnt/user/appdata',
+    'MAX_FILE_SIZE_KB'    => '500',
+    'SKIP_CONTAINERS'     => '',
+    'GLOBAL_EXCLUDE'      => '*.db,*.db-shm,*.db-wal,*.sqlite,*.log,*.log.*,logs/**,log/**,cache/**,Cache/**,tmp/**,temp/**,thumbnails/**,Thumbnails/**,Metadata/**,metadata/**,*.jpg,*.jpeg,*.png,*.gif,*.bmp,*.webp,*.mp4,*.mkv,*.avi,*.mp3,*.flac,*.sock,*.pid,*.lock,node_modules/**,__pycache__/**,.git/**',
+    'COMPOSE_ENABLED'     => 'yes',
+    'COMPOSE_PATH'        => '/boot/config/plugins/compose.manager/projects',
+    'HAOS_ENABLED'        => 'no',
+    'HAOS_HOST'           => 'homeassistant.local',
+    'HAOS_PORT'           => '22',
+    'HAOS_USER'           => 'root',
+    'HAOS_SSH_KEY'        => '/root/.ssh/haos_backup_key',
+    'HAOS_INCLUDE'        => '/config/configuration.yaml,/config/automations.yaml,/config/scripts.yaml,/config/scenes.yaml,/config/secrets.yaml,/config/customize.yaml,/config/known_devices.yaml,/config/groups.yaml,/config/packages/**,/config/custom_components/**,/config/blueprints/**,/config/www/**,/config/themes/**,/config/.storage/core.config_entries,/config/.storage/core.device_registry,/config/.storage/core.entity_registry,/config/.storage/core.area_registry,/config/.storage/lovelace*',
+    'HAOS_EXCLUDE'        => '/config/home-assistant_v2.db,/config/home-assistant_v2.db-shm,/config/home-assistant_v2.db-wal,/config/tts/**,/config/deps/**,/config/.cloud/**,/config/backups/**',
+    'UNRAID_ENABLED'      => 'yes',
+    'UNRAID_PATHS'        => '/boot/config/go,/boot/config/network.cfg,/boot/config/ident.cfg,/boot/config/disk.cfg,/boot/config/share.cfg,/boot/config/smb-extra.conf,/boot/config/syslinux/syslinux.cfg',
+    'CRON_SCHEDULE'       => '0 3 * * *',
+    'NOTIFICATION'        => 'yes',
+    'LOG_FILE'            => '/var/log/git-backup.log',
+    'LOG_MAX_SIZE_KB'     => '1024',
+    'DRY_RUN'             => 'no',
+];
+
+$cfg = parse_plugin_cfg($plugin);
+foreach ($defaults as $key => $val) {
+    if (!isset($cfg[$key]) || $cfg[$key] === '') $cfg[$key] = $val;
+}
+
+// Helper: convert CSV to newline-separated for textarea display
+function csv_to_lines($csv) {
+    return str_replace(',', "\n", $csv);
+}
+
+// Check service status
+$cron_status = trim(exec("$plugdir/rc.$plugin status 2>/dev/null"));
+$is_running = (strpos($cron_status, 'running') !== false);
+
+// Check if repo is initialized
+$repo_initialized = file_exists($cfg['REPO_PATH'] . '/.git');
+?>
+
+<link type="text/css" rel="stylesheet" href="<?autov("/$plugin/css/git-backup.css")?>">
+
+<div id="title"><span class="left"><img src="/plugins/<?=$plugin?>/images/icon.png" class="icon">&nbsp;Git Backup Settings</span></div>
+
+<!-- Status Banner -->
+<div class="notice <?=$repo_initialized ? 'shift' : 'alert'?>" style="margin-bottom:16px">
+<?if (!$repo_initialized):?>
+    <strong>Repository not initialized.</strong> Configure your settings below, then click <em>Initialize Repo</em>.
+<?else:?>
+    Repository initialized at <strong><?=htmlspecialchars($cfg['REPO_PATH'])?></strong>
+    &nbsp;|&nbsp; Cron: <strong><?=$is_running ? 'Active' : 'Inactive'?></strong>
+    <?if ($is_running):?>
+    &nbsp;(<?=$cfg['CRON_SCHEDULE']?>)
+    <?endif;?>
+<?endif;?>
+</div>
+
+<form id="git-backup-form" method="POST" action="/update.php" target="progressFrame">
+    <input type="hidden" name="#file" value="<?=$plugin?>/<?=$plugin?>.cfg">
+    <input type="hidden" name="#command" value="<?=$plugdir?>/rc.<?=$plugin?>">
+    <input type="hidden" name="#arg[1]" value="restart">
+
+    <!-- ── Git Settings ──────────────────────────────────────── -->
+    <div class="title"><span class="left">Git Repository</span></div>
+
+    <dl>
+        <dt>Repository Path:</dt>
+        <dd><input type="text" name="REPO_PATH" value="<?=htmlspecialchars($cfg['REPO_PATH'])?>" size="50" placeholder="/mnt/user/appdata/git-config-backup"></dd>
+    </dl>
+    <blockquote class="inline_help">
+        <p>Local path where the git backup repository will be stored.</p>
+    </blockquote>
+
+    <dl>
+        <dt>Remote URL:</dt>
+        <dd><input type="text" name="REMOTE_URL" value="<?=htmlspecialchars($cfg['REMOTE_URL'])?>" size="60" placeholder="git@github.com:user/unraid-configs.git"></dd>
+    </dl>
+    <blockquote class="inline_help">
+        <p>SSH URL of your git remote. Leave empty for local-only backups. Example: <code>git@github.com:user/unraid-configs.git</code></p>
+    </blockquote>
+
+    <dl>
+        <dt>Branch:</dt>
+        <dd><input type="text" name="BRANCH" value="<?=htmlspecialchars($cfg['BRANCH'])?>" size="20"></dd>
+    </dl>
+
+    <dl>
+        <dt>Push After Commit:</dt>
+        <dd>
+            <select name="PUSH_AFTER_COMMIT">
+                <option value="yes" <?=($cfg['PUSH_AFTER_COMMIT']=='yes')?'selected':''?>>Yes</option>
+                <option value="no" <?=($cfg['PUSH_AFTER_COMMIT']=='no')?'selected':''?>>No</option>
+            </select>
+        </dd>
+    </dl>
+
+    <dl>
+        <dt>Commit Prefix:</dt>
+        <dd><input type="text" name="COMMIT_PREFIX" value="<?=htmlspecialchars($cfg['COMMIT_PREFIX'])?>" size="20"></dd>
+    </dl>
+
+    <dl>
+        <dt>Remote Name:</dt>
+        <dd><input type="text" name="REMOTE_NAME" value="<?=htmlspecialchars($cfg['REMOTE_NAME'])?>" size="20"></dd>
+    </dl>
+
+    <!-- ── Appdata Settings ──────────────────────────────────── -->
+    <div class="title"><span class="left">Appdata Backup</span></div>
+
+    <dl>
+        <dt>Appdata Path:</dt>
+        <dd><input type="text" name="APPDATA_PATH" value="<?=htmlspecialchars($cfg['APPDATA_PATH'])?>" size="50"></dd>
+    </dl>
+
+    <dl>
+        <dt>Max File Size (KB):</dt>
+        <dd><input type="number" name="MAX_FILE_SIZE_KB" value="<?=htmlspecialchars($cfg['MAX_FILE_SIZE_KB'])?>" min="1" max="10240"></dd>
+    </dl>
+    <blockquote class="inline_help">
+        <p>Files larger than this will be excluded. Default: 500 KB.</p>
+    </blockquote>
+
+    <dl>
+        <dt>Skip Containers:</dt>
+        <dd><input type="text" name="SKIP_CONTAINERS" value="<?=htmlspecialchars($cfg['SKIP_CONTAINERS'])?>" size="60" placeholder="container1,container2"></dd>
+    </dl>
+    <blockquote class="inline_help">
+        <p>Comma-separated list of appdata folder names to completely skip.</p>
+    </blockquote>
+
+    <dl>
+        <dt>Global Exclude Patterns:</dt>
+        <dd>
+            <textarea id="global_exclude_display" rows="12" cols="60"><?=htmlspecialchars(csv_to_lines($cfg['GLOBAL_EXCLUDE']))?></textarea>
+            <input type="hidden" name="GLOBAL_EXCLUDE" id="global_exclude_hidden" value="<?=htmlspecialchars($cfg['GLOBAL_EXCLUDE'])?>">
+        </dd>
+    </dl>
+    <blockquote class="inline_help">
+        <p>One pattern per line. Uses rsync/gitignore-style globs (e.g., <code>*.db</code>, <code>cache/**</code>).<br>
+        Applied to all containers unless overridden by the knowledge base or per-container overrides.</p>
+    </blockquote>
+
+    <!-- ── Compose Settings ──────────────────────────────────── -->
+    <div class="title"><span class="left">Docker Compose</span></div>
+
+    <dl>
+        <dt>Backup Compose Files:</dt>
+        <dd>
+            <select name="COMPOSE_ENABLED">
+                <option value="yes" <?=($cfg['COMPOSE_ENABLED']=='yes')?'selected':''?>>Yes</option>
+                <option value="no" <?=($cfg['COMPOSE_ENABLED']=='no')?'selected':''?>>No</option>
+            </select>
+        </dd>
+    </dl>
+
+    <dl>
+        <dt>Compose Path:</dt>
+        <dd><input type="text" name="COMPOSE_PATH" value="<?=htmlspecialchars($cfg['COMPOSE_PATH'])?>" size="60"></dd>
+    </dl>
+
+    <!-- ── HAOS Settings ─────────────────────────────────────── -->
+    <div class="title"><span class="left">Home Assistant OS (HAOS)</span></div>
+
+    <dl>
+        <dt>Enable HAOS Backup:</dt>
+        <dd>
+            <select name="HAOS_ENABLED" id="haos_enabled" onchange="toggleHaos()">
+                <option value="no" <?=($cfg['HAOS_ENABLED']=='no')?'selected':''?>>No</option>
+                <option value="yes" <?=($cfg['HAOS_ENABLED']=='yes')?'selected':''?>>Yes</option>
+            </select>
+        </dd>
+    </dl>
+
+    <div id="haos_settings" style="<?=($cfg['HAOS_ENABLED']=='no')?'display:none':''?>">
+        <dl>
+            <dt>HAOS Host:</dt>
+            <dd><input type="text" name="HAOS_HOST" value="<?=htmlspecialchars($cfg['HAOS_HOST'])?>" size="30"></dd>
+        </dl>
+
+        <dl>
+            <dt>SSH Port:</dt>
+            <dd><input type="number" name="HAOS_PORT" value="<?=htmlspecialchars($cfg['HAOS_PORT'])?>" min="1" max="65535" style="width:80px"></dd>
+        </dl>
+
+        <dl>
+            <dt>SSH User:</dt>
+            <dd><input type="text" name="HAOS_USER" value="<?=htmlspecialchars($cfg['HAOS_USER'])?>" size="20"></dd>
+        </dl>
+
+        <dl>
+            <dt>SSH Key Path:</dt>
+            <dd><input type="text" name="HAOS_SSH_KEY" value="<?=htmlspecialchars($cfg['HAOS_SSH_KEY'])?>" size="50"></dd>
+        </dl>
+        <blockquote class="inline_help">
+            <p>Generate: <code>ssh-keygen -t ed25519 -f /root/.ssh/haos_backup_key -N ""</code><br>
+            Copy to HAOS: <code>ssh-copy-id -i /root/.ssh/haos_backup_key root@homeassistant.local</code></p>
+        </blockquote>
+
+        <dl>
+            <dt>HAOS Include Paths:</dt>
+            <dd>
+                <textarea id="haos_include_display" rows="8" cols="60"><?=htmlspecialchars(csv_to_lines($cfg['HAOS_INCLUDE']))?></textarea>
+                <input type="hidden" name="HAOS_INCLUDE" id="haos_include_hidden" value="<?=htmlspecialchars($cfg['HAOS_INCLUDE'])?>">
+            </dd>
+        </dl>
+
+        <dl>
+            <dt>HAOS Exclude Paths:</dt>
+            <dd>
+                <textarea id="haos_exclude_display" rows="4" cols="60"><?=htmlspecialchars(csv_to_lines($cfg['HAOS_EXCLUDE']))?></textarea>
+                <input type="hidden" name="HAOS_EXCLUDE" id="haos_exclude_hidden" value="<?=htmlspecialchars($cfg['HAOS_EXCLUDE'])?>">
+            </dd>
+        </dl>
+    </div>
+
+    <!-- ── Unraid System ─────────────────────────────────────── -->
+    <div class="title"><span class="left">Unraid System Config</span></div>
+
+    <dl>
+        <dt>Backup System Config:</dt>
+        <dd>
+            <select name="UNRAID_ENABLED">
+                <option value="yes" <?=($cfg['UNRAID_ENABLED']=='yes')?'selected':''?>>Yes</option>
+                <option value="no" <?=($cfg['UNRAID_ENABLED']=='no')?'selected':''?>>No</option>
+            </select>
+        </dd>
+    </dl>
+
+    <dl>
+        <dt>System Config Paths:</dt>
+        <dd>
+            <textarea id="unraid_paths_display" rows="6" cols="60"><?=htmlspecialchars(csv_to_lines($cfg['UNRAID_PATHS']))?></textarea>
+            <input type="hidden" name="UNRAID_PATHS" id="unraid_paths_hidden" value="<?=htmlspecialchars($cfg['UNRAID_PATHS'])?>">
+        </dd>
+    </dl>
+
+    <!-- ── Schedule ───────────────────────────────────────────── -->
+    <div class="title"><span class="left">Schedule &amp; Notifications</span></div>
+
+    <dl>
+        <dt>Cron Schedule:</dt>
+        <dd><input type="text" name="CRON_SCHEDULE" value="<?=htmlspecialchars($cfg['CRON_SCHEDULE'])?>" size="30" placeholder="0 3 * * *"></dd>
+    </dl>
+    <blockquote class="inline_help">
+        <p>Standard 5-field cron: minute hour day month weekday. Default: <code>0 3 * * *</code> (daily 3 AM).<br>
+        Examples: <code>0 */6 * * *</code> (every 6 hours), <code>0 3 * * 1</code> (weekly Monday 3 AM).</p>
+    </blockquote>
+
+    <dl>
+        <dt>Notifications:</dt>
+        <dd>
+            <select name="NOTIFICATION">
+                <option value="yes" <?=($cfg['NOTIFICATION']=='yes')?'selected':''?>>Yes</option>
+                <option value="no" <?=($cfg['NOTIFICATION']=='no')?'selected':''?>>No</option>
+            </select>
+        </dd>
+    </dl>
+
+    <dl>
+        <dt>Log File:</dt>
+        <dd><input type="text" name="LOG_FILE" value="<?=htmlspecialchars($cfg['LOG_FILE'])?>" size="50"></dd>
+    </dl>
+
+    <!-- ── Buttons ────────────────────────────────────────────── -->
+    <dl>
+        <dt>&nbsp;</dt>
+        <dd>
+            <input type="submit" value="Apply" onclick="prepareSubmit()">
+            <input type="button" value="Run Backup Now" onclick="runBackup('')" <?=!$repo_initialized?'disabled':''?>>
+            <input type="button" value="Dry Run" onclick="runBackup('--dry-run --verbose')" <?=!$repo_initialized?'disabled':''?>>
+            <input type="button" value="Initialize Repo" onclick="initRepo()">
+            <input type="button" value="View Log" onclick="viewLog()">
+        </dd>
+    </dl>
+
+</form>
+
+<script>
+function toggleHaos() {
+    var enabled = document.getElementById('haos_enabled').value;
+    document.getElementById('haos_settings').style.display = (enabled === 'yes') ? '' : 'none';
+}
+
+// Convert textarea newlines to CSV for hidden inputs before form submit
+function prepareSubmit() {
+    var fields = [
+        ['global_exclude_display', 'global_exclude_hidden'],
+        ['haos_include_display', 'haos_include_hidden'],
+        ['haos_exclude_display', 'haos_exclude_hidden'],
+        ['unraid_paths_display', 'unraid_paths_hidden'],
+    ];
+    fields.forEach(function(pair) {
+        var ta = document.getElementById(pair[0]);
+        var hidden = document.getElementById(pair[1]);
+        if (ta && hidden) {
+            hidden.value = ta.value.split('\n')
+                .map(function(l) { return l.trim(); })
+                .filter(function(l) { return l.length > 0; })
+                .join(',');
+        }
+    });
+}
+
+function runBackup(args) {
+    openBox('/plugins/git-backup/scripts/backup.sh ' + args,
+            'Git Backup', 800, 600, true);
+}
+
+function initRepo() {
+    openBox('/plugins/git-backup/scripts/init-repo.sh',
+            'Initialize Repository', 700, 500, true);
+}
+
+function viewLog() {
+    var logFile = '<?=htmlspecialchars($cfg['LOG_FILE'])?>';
+    openBox('/usr/bin/tail -100 ' + logFile,
+            'Git Backup Log', 800, 600, true);
+}
+</script>

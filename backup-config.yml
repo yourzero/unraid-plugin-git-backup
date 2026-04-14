@@ -1,0 +1,145 @@
+# backup-config.yml
+# Main configuration for Unraid Git Config Backup
+# Edit this file to customize your backup behavior.
+
+# ── Git Settings ─────────────────────────────────────────────────
+git:
+  repo_path: /mnt/user/appdata/git-config-backup  # local git repo location
+  remote: origin                                    # git remote name
+  branch: main
+  commit_message_prefix: "backup:"                  # prefix for auto-commits
+  push_after_commit: true
+  # remote_url: git@github.com:user/unraid-configs.git  # set during init
+
+# ── Appdata Backup ───────────────────────────────────────────────
+appdata:
+  path: /mnt/user/appdata
+
+  # Global exclude patterns (applied to ALL containers unless overridden)
+  global_exclude:
+    # Databases
+    - "*.db"
+    - "*.db-shm"
+    - "*.db-wal"
+    - "*.sqlite"
+    - "*.sqlite3"
+    - "*.sqlite-journal"
+    # Logs
+    - "*.log"
+    - "*.log.*"
+    - "logs/**"
+    - "log/**"
+    # Caches and temp
+    - "cache/**"
+    - "Cache/**"
+    - "CacheClip/**"
+    - "tmp/**"
+    - "temp/**"
+    # Media / thumbnails (regeneratable)
+    - "thumbnails/**"
+    - "Thumbnails/**"
+    - "Metadata/**"
+    - "metadata/**"
+    - "*.jpg"
+    - "*.jpeg"
+    - "*.png"
+    - "*.gif"
+    - "*.bmp"
+    - "*.webp"
+    - "*.mp4"
+    - "*.mkv"
+    - "*.avi"
+    - "*.mp3"
+    - "*.flac"
+    # Runtime / sockets
+    - "*.sock"
+    - "*.pid"
+    - "*.lock"
+    # Dev artifacts
+    - "node_modules/**"
+    - "__pycache__/**"
+    - ".git/**"
+    # Plex-specific large dirs
+    - "Plug-in Support/**"
+    - "Crash Reports/**"
+    - "Codecs/**"
+    - "Updates/**"
+    - "Diagnostics/**"
+    - "Media/**"
+
+  # Max file size to include (files larger than this are skipped)
+  max_file_size_kb: 500
+
+  # Containers to completely skip (by appdata folder name)
+  skip_containers: []
+  #  - some-container-you-dont-care-about
+
+  # Per-container overrides (same format as container-knowledge.yml entries)
+  # These take highest priority over both global rules and knowledge base.
+  overrides: {}
+  #  Plex-Media-Server:
+  #    include:
+  #      - "Library/Application Support/Plex Media Server/Preferences.xml"
+  #      - "Library/Application Support/Plex Media Server/Plug-in Support/Databases/*.db"
+
+# ── Docker Compose Files ─────────────────────────────────────────
+compose:
+  enabled: true
+  source_path: /boot/config/plugins/compose.manager/projects
+  # All files in project subdirs are backed up (docker-compose.yml, .env, etc.)
+
+# ── HAOS (Home Assistant OS) VM Config ───────────────────────────
+haos:
+  enabled: false  # set to true once SSH is configured
+  host: homeassistant.local
+  port: 22
+  user: root
+  # SSH key path (generate with: ssh-keygen -t ed25519 -f /root/.ssh/haos_backup_key)
+  ssh_key: /root/.ssh/haos_backup_key
+  paths:
+    - /config/configuration.yaml
+    - /config/automations.yaml
+    - /config/scripts.yaml
+    - /config/scenes.yaml
+    - /config/secrets.yaml
+    - /config/customize.yaml
+    - /config/known_devices.yaml
+    - /config/groups.yaml
+    - /config/packages/**
+    - /config/custom_components/**
+    - /config/blueprints/**
+    - /config/www/**
+    - /config/themes/**
+    - /config/.storage/core.config_entries
+    - /config/.storage/core.device_registry
+    - /config/.storage/core.entity_registry
+    - /config/.storage/core.area_registry
+    - /config/.storage/lovelace*
+  exclude:
+    - /config/home-assistant_v2.db
+    - /config/home-assistant_v2.db-shm
+    - /config/home-assistant_v2.db-wal
+    - /config/tts/**
+    - /config/deps/**
+    - /config/.cloud/**
+    - /config/backups/**
+
+# ── Unraid System Config ────────────────────────────────────────
+unraid:
+  enabled: true
+  paths:
+    - /boot/config/plugins/compose.manager/projects  # already in compose section
+    - /boot/config/go                                 # startup script
+    - /boot/config/network.cfg                        # network config
+    - /boot/config/ident.cfg                          # server identity
+    - /boot/config/disk.cfg                           # disk assignments
+    - /boot/config/share.cfg                          # share settings
+    - /boot/config/smb-extra.conf                     # samba extras
+    - /boot/config/syslinux/syslinux.cfg             # boot config
+  exclude:
+    - "*.bak"
+
+# ── Schedule ─────────────────────────────────────────────────────
+schedule:
+  cron: "0 3 * * *"  # daily at 3 AM
+  # Alternative: "0 */6 * * *" for every 6 hours

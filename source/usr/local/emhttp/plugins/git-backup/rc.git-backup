@@ -1,0 +1,62 @@
+#!/bin/bash
+# rc.git-backup — Service control for git-backup plugin
+#
+# Manages cron job installation and provides manual run interface.
+#
+# Usage: rc.git-backup {start|stop|restart|status|run [--dry-run] [--verbose]}
+
+PLUGIN="git-backup"
+CONFIG="/boot/config/plugins/$PLUGIN/$PLUGIN.cfg"
+CRON_FILE="/etc/cron.d/$PLUGIN"
+BACKUP_SCRIPT="/usr/local/emhttp/plugins/$PLUGIN/scripts/backup.sh"
+
+# Load config
+[ -f "$CONFIG" ] && source "$CONFIG"
+
+install_cron() {
+    local schedule="${CRON_SCHEDULE:-0 3 * * *}"
+    local log="${LOG_FILE:-/var/log/git-backup.log}"
+    echo "$schedule root $BACKUP_SCRIPT >> $log 2>&1" > "$CRON_FILE"
+    chmod 644 "$CRON_FILE"
+
+    # Some Unraid versions need a crond reload
+    if command -v update_cron &>/dev/null; then
+        update_cron
+    fi
+}
+
+remove_cron() {
+    rm -f "$CRON_FILE"
+}
+
+case "${1:-}" in
+    start)
+        install_cron
+        echo "Git Backup cron installed: ${CRON_SCHEDULE:-0 3 * * *}"
+        ;;
+    stop)
+        remove_cron
+        echo "Git Backup cron removed."
+        ;;
+    restart)
+        remove_cron
+        install_cron
+        echo "Git Backup cron restarted: ${CRON_SCHEDULE:-0 3 * * *}"
+        ;;
+    status)
+        if [ -f "$CRON_FILE" ]; then
+            echo "running"
+            echo "Schedule: $(head -1 "$CRON_FILE" | awk '{print $1,$2,$3,$4,$5}')"
+        else
+            echo "stopped"
+        fi
+        ;;
+    run)
+        shift
+        exec "$BACKUP_SCRIPT" "$@"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status|run [--dry-run] [--verbose]}"
+        exit 1
+        ;;
+esac

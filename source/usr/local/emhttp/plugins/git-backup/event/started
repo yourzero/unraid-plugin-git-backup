@@ -1,0 +1,4 @@
+#!/bin/bash
+# Re-install cron schedule after Unraid array start.
+# /etc/cron.d/ is tmpfs and wiped on every reboot.
+/usr/local/emhttp/plugins/git-backup/rc.git-backup start
