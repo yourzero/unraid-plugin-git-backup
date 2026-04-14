@@ -1,6 +1,6 @@
 Menu="Utilities"
 Title="Git Backup"
-Icon="icon-clone"
+Icon="fa-code-branch"
 ---
 <?PHP
 /* git-backup settings page for Unraid */
@@ -59,7 +59,7 @@ $repo_initialized = file_exists($cfg['REPO_PATH'] . '/.git');
 
 <link type="text/css" rel="stylesheet" href="<?autov("/$plugin/css/git-backup.css")?>">
 
-<div id="title"><span class="left"><img src="/plugins/<?=$plugin?>/images/icon.png" class="icon">&nbsp;Git Backup Settings</span></div>
+<div id="title"><span class="left"><img src="/plugins/<?=$plugin?>/images/icon.svg" class="icon" width="48" height="48">&nbsp;Git Backup Settings</span></div>
 
 <!-- Status Banner -->
 <div class="notice <?=$repo_initialized ? 'shift' : 'alert'?>" style="margin-bottom:16px">

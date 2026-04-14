@@ -272,10 +272,11 @@ backup_single_container() {
     output=$(rsync "${rsync_args[@]}" "$src" "$dest" 2>&1) || true
 
     if [ "$VERBOSE" = "yes" ] || [ "$DRY_RUN" = "yes" ]; then
-        # Count actual file transfers (lines that don't start with special chars)
-        local file_count
-        file_count=$(echo "$output" | grep -c '^[^.d>*]' 2>/dev/null || echo 0)
-        [ "$file_count" -gt 0 ] && echo "$output" | head -20
+        # Show first 20 lines of output if non-empty
+        # Use <<< to avoid broken pipe from echo|head with pipefail
+        if [ -n "$output" ]; then
+            head -20 <<< "$output" || true
+        fi
     fi
 
     CONTAINERS_BACKED_UP=$((CONTAINERS_BACKED_UP + 1))

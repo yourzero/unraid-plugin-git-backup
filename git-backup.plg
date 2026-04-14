@@ -11,7 +11,7 @@
 <PLUGIN name="&name;" author="&author;" version="&version;"
   pluginURL="&repo;/git-backup.plg"
   min="6.12.0"
-  icon="clone"
+  icon="fa-code-branch"
   support="https://github.com/yourzero/unraid-plugin-git-backup/issues">
 
 <CHANGES>
