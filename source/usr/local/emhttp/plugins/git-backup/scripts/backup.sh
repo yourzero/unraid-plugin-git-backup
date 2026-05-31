@@ -38,6 +38,9 @@ log() {
 
 log_verbose() {
     [ "$VERBOSE" = "yes" ] && log "  $*"
+    return 0  # Never let the && short-circuit propagate: under `set -e`,
+              # a non-zero return from a bare log_verbose call aborts the
+              # entire backup (e.g. on the first skipped/global-tier container).
 }
 
 # ── Human-Readable Bytes ─────────────────────────────────────────
