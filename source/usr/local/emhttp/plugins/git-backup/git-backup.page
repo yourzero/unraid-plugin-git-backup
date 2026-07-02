@@ -50,8 +50,8 @@ function csv_to_lines($csv) {
 }
 
 // Check service status
-$cron_status = trim(exec("$plugdir/rc.$plugin status 2>/dev/null"));
-$is_running = (strpos($cron_status, 'running') !== false);
+exec("$plugdir/rc.$plugin status 2>/dev/null", $cron_status_lines);
+$is_running = isset($cron_status_lines[0]) && trim($cron_status_lines[0]) === 'running';
 
 // Check if repo is initialized
 $repo_initialized = file_exists($cfg['REPO_PATH'] . '/.git');

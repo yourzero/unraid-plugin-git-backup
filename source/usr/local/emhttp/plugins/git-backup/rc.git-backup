@@ -16,7 +16,7 @@ BACKUP_SCRIPT="/usr/local/emhttp/plugins/$PLUGIN/scripts/backup.sh"
 install_cron() {
     local schedule="${CRON_SCHEDULE:-0 3 * * *}"
     local log="${LOG_FILE:-/var/log/git-backup.log}"
-    echo "$schedule root $BACKUP_SCRIPT >> $log 2>&1" > "$CRON_FILE"
+    echo "$schedule $BACKUP_SCRIPT >> $log 2>&1" > "$CRON_FILE"
     chmod 644 "$CRON_FILE"
 
     # Some Unraid versions need a crond reload
