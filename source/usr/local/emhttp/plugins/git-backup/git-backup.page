@@ -30,6 +30,13 @@ $defaults = [
     'HAOS_SSH_KEY'        => '/root/.ssh/haos_backup_key',
     'HAOS_INCLUDE'        => '/config/configuration.yaml,/config/automations.yaml,/config/scripts.yaml,/config/scenes.yaml,/config/secrets.yaml,/config/customize.yaml,/config/known_devices.yaml,/config/groups.yaml,/config/packages/**,/config/custom_components/**,/config/blueprints/**,/config/www/**,/config/themes/**,/config/.storage/core.config_entries,/config/.storage/core.device_registry,/config/.storage/core.entity_registry,/config/.storage/core.area_registry,/config/.storage/lovelace*',
     'HAOS_EXCLUDE'        => '/config/home-assistant_v2.db,/config/home-assistant_v2.db-shm,/config/home-assistant_v2.db-wal,/config/tts/**,/config/deps/**,/config/.cloud/**,/config/backups/**',
+    'KLIPPER_ENABLED'          => 'no',
+    'KLIPPER_HOST'             => '',
+    'KLIPPER_SHARE'            => 'home',
+    'KLIPPER_CREDENTIALS_FILE' => '/boot/config/plugins/git-backup/klipper-credentials',
+    'KLIPPER_BASE'             => 'printer_data',
+    'KLIPPER_INCLUDE'          => 'config/**,systemd/**,moonraker.asvc,backup-config.sh',
+    'KLIPPER_EXCLUDE'          => '.git,.git/**,**/.git,backup/,config-backup/,database/,gcodes/,logs/,comms/,certs/,misc/,config/printer-[0-9]*.cfg,config/dynamic-[0-9]*.cfg,config/*.zip,config/macros/*.zip,config/macros2/*.zip,config/macros/jschuh/**,config/macros2/jschuh/**,config/.moonraker.conf.bkp,config/crowsnest.conf.*',
     'UNRAID_ENABLED'      => 'yes',
     'UNRAID_PATHS'        => '/boot/config/go,/boot/config/network.cfg,/boot/config/ident.cfg,/boot/config/disk.cfg,/boot/config/share.cfg,/boot/config/smb-extra.conf,/boot/config/syslinux/syslinux.cfg',
     'CRON_SCHEDULE'       => '0 3 * * *',
@@ -257,6 +264,77 @@ $repo_initialized = file_exists($cfg['REPO_PATH'] . '/.git');
         </dl>
     </div>
 
+    <!-- ── Klipper Settings ──────────────────────────────────── -->
+    <div class="title"><span class="left">Klipper (3D Printer)</span></div>
+
+    <dl>
+        <dt>Enable Klipper Backup:</dt>
+        <dd>
+            <select name="KLIPPER_ENABLED" id="klipper_enabled" onchange="toggleKlipper()">
+                <option value="no" <?=($cfg['KLIPPER_ENABLED']=='no')?'selected':''?>>No</option>
+                <option value="yes" <?=($cfg['KLIPPER_ENABLED']=='yes')?'selected':''?>>Yes</option>
+            </select>
+        </dd>
+    </dl>
+
+    <div id="klipper_settings" style="<?=($cfg['KLIPPER_ENABLED']=='no')?'display:none':''?>">
+        <dl>
+            <dt>Printer Host:</dt>
+            <dd><input type="text" name="KLIPPER_HOST" value="<?=htmlspecialchars($cfg['KLIPPER_HOST'])?>" size="30" placeholder="mc-3dprinter"></dd>
+        </dl>
+
+        <dl>
+            <dt>SMB Share:</dt>
+            <dd><input type="text" name="KLIPPER_SHARE" value="<?=htmlspecialchars($cfg['KLIPPER_SHARE'])?>" size="20"></dd>
+        </dl>
+        <blockquote class="inline_help">
+            <p>The share exposing the printer host's home directory (Mainsail/Fluidd's file manager share) &mdash;
+            not an SSH connection. Pulled over CIFS/SMB, mounted read-only for the duration of the backup only.</p>
+        </blockquote>
+
+        <dl>
+            <dt>SMB Credentials File:</dt>
+            <dd><input type="text" name="KLIPPER_CREDENTIALS_FILE" value="<?=htmlspecialchars($cfg['KLIPPER_CREDENTIALS_FILE'])?>" size="50"></dd>
+        </dl>
+        <blockquote class="inline_help">
+            <p>No credentials UI on purpose &mdash; create this file by hand over SSH, one time:<br>
+            <code>printf 'username=USER\npassword=PASS\n' &gt; <?=htmlspecialchars($cfg['KLIPPER_CREDENTIALS_FILE'])?> &amp;&amp; chmod 600 <?=htmlspecialchars($cfg['KLIPPER_CREDENTIALS_FILE'])?></code><br>
+            /boot is vfat and has no real Unix permission bits &mdash; the same accepted risk as the HAOS SSH key
+            already stored there. Physical access to the flash drive is already a full compromise.</p>
+        </blockquote>
+
+        <dl>
+            <dt>Base Directory:</dt>
+            <dd><input type="text" name="KLIPPER_BASE" value="<?=htmlspecialchars($cfg['KLIPPER_BASE'])?>" size="30"></dd>
+        </dl>
+        <blockquote class="inline_help">
+            <p>Path inside the share holding the printer's config &mdash; Moonraker's standard layout is
+            <code>printer_data/{config,logs,gcodes,database,...}</code>.</p>
+        </blockquote>
+
+        <dl>
+            <dt>Klipper Include Paths:</dt>
+            <dd>
+                <textarea id="klipper_include_display" rows="4" cols="60"><?=htmlspecialchars(csv_to_lines($cfg['KLIPPER_INCLUDE']))?></textarea>
+                <input type="hidden" name="KLIPPER_INCLUDE" id="klipper_include_hidden" value="<?=htmlspecialchars($cfg['KLIPPER_INCLUDE'])?>">
+            </dd>
+        </dl>
+
+        <dl>
+            <dt>Klipper Exclude Paths:</dt>
+            <dd>
+                <textarea id="klipper_exclude_display" rows="8" cols="60"><?=htmlspecialchars(csv_to_lines($cfg['KLIPPER_EXCLUDE']))?></textarea>
+                <input type="hidden" name="KLIPPER_EXCLUDE" id="klipper_exclude_hidden" value="<?=htmlspecialchars($cfg['KLIPPER_EXCLUDE'])?>">
+            </dd>
+        </dl>
+        <blockquote class="inline_help">
+            <p>Paths are relative to the base directory above. Defaults strip Moonraker's own dated config
+            snapshots, print/log/database trees, and any nested <code>.git</code> (Moonraker auto-versions
+            config/ locally &mdash; that must never reach <code>git add -A</code> or it becomes a gitlink and
+            breaks the whole backup run).</p>
+        </blockquote>
+    </div>
+
     <!-- ── Unraid System ─────────────────────────────────────── -->
     <div class="title"><span class="left">Unraid System Config</span></div>
 
@@ -325,12 +403,19 @@ function toggleHaos() {
     document.getElementById('haos_settings').style.display = (enabled === 'yes') ? '' : 'none';
 }
 
+function toggleKlipper() {
+    var enabled = document.getElementById('klipper_enabled').value;
+    document.getElementById('klipper_settings').style.display = (enabled === 'yes') ? '' : 'none';
+}
+
 // Convert textarea newlines to CSV for hidden inputs before form submit
 function prepareSubmit() {
     var fields = [
         ['global_exclude_display', 'global_exclude_hidden'],
         ['haos_include_display', 'haos_include_hidden'],
         ['haos_exclude_display', 'haos_exclude_hidden'],
+        ['klipper_include_display', 'klipper_include_hidden'],
+        ['klipper_exclude_display', 'klipper_exclude_hidden'],
         ['unraid_paths_display', 'unraid_paths_hidden'],
     ];
     fields.forEach(function(pair) {

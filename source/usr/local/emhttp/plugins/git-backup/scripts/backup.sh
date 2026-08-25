@@ -67,6 +67,9 @@ acquire_lock() {
 # Bash only supports one trap per signal, so we consolidate here.
 cleanup() {
     rm -f "$LOCKFILE" "${KB_CACHE:-}"
+    local klipper_mnt="${KLIPPER_MOUNT_DIR:-/tmp/git-backup-klipper-mount}"
+    mountpoint -q "$klipper_mnt" 2>/dev/null && umount "$klipper_mnt" 2>/dev/null
+    return 0  # trap must not fail even if nothing was mounted
 }
 
 # ── Config Loading ───────────────────────────────────────────────
@@ -116,9 +119,50 @@ validate_prereqs() {
         exit 1
     fi
 
+    # git-crypt preflight — fail HERE, before gathering tens of thousands of
+    # files, rather than after. If git-crypt is unavailable or the repo is
+    # locked, git's clean filter silently no-ops and the run would commit real
+    # credentials in plaintext and push them. A missed backup is recoverable;
+    # a pushed credential is not.
+    if [ "${GITCRYPT_ENABLED:-no}" = "yes" ]; then
+        local gc="${GITCRYPT_BIN:-git-crypt}"
+
+        if ! command -v "$gc" >/dev/null 2>&1 && [ ! -x "$gc" ]; then
+            log "ERROR: git-crypt enabled but binary not found/executable: $gc"
+            log "  On Unraid /usr is rebuilt from RAM at boot — keep the binary in a"
+            log "  persistent stash and restore the symlink at array start."
+            exit 1
+        fi
+        if [ ! -f "$REPO_PATH/.git/git-crypt/keys/default" ]; then
+            log "ERROR: repo is not unlocked for git-crypt (no .git/git-crypt/keys/default)"
+            log "  Run: cd $REPO_PATH && $gc unlock /boot/config/plugins/git-backup/git-crypt.key"
+            exit 1
+        fi
+        if [ ! -f "$REPO_PATH/.gitattributes" ]; then
+            log "ERROR: $REPO_PATH/.gitattributes missing — nothing would be encrypted"
+            exit 1
+        fi
+        # Bare "git-crypt" in the filter depends on PATH *and* on the boot-time
+        # restore having run. Warn loudly; an absolute path is the safe form.
+        local clean_cmd
+        clean_cmd=$(cd "$REPO_PATH" && git config --get filter.git-crypt.clean 2>/dev/null || true)
+        case "$clean_cmd" in
+            /*) : ;;
+            *)  log "WARNING: filter.git-crypt.clean is not an absolute path ('$clean_cmd')."
+                log "         It will break whenever PATH differs (e.g. cron after a reboot)." ;;
+        esac
+        log_verbose "git-crypt preflight OK ($gc)"
+    fi
+
     # Check appdata path exists
     if [ ! -d "$APPDATA_PATH" ]; then
         log "ERROR: Appdata path not found: $APPDATA_PATH"
+        exit 1
+    fi
+
+    if [ "${KLIPPER_ENABLED:-no}" = "yes" ] && ! command -v mount.cifs >/dev/null 2>&1; then
+        log "ERROR: Klipper backup enabled but mount.cifs is not available"
+        log "  cifs-utils should be built into Unraid — check the array is fully started"
         exit 1
     fi
 
@@ -470,6 +514,78 @@ backup_haos() {
     fi
 }
 
+# ── Backup Klipper (3D Printer) Config ───────────────────────────
+# No SSH here — access is over CIFS/SMB from the printer host's shared
+# home directory. Mounted read-only on demand for the duration of this
+# function, then unmounted; nothing is left mounted between runs.
+backup_klipper() {
+    [ "$KLIPPER_ENABLED" = "yes" ] || return 0
+
+    log "Backing up Klipper config..."
+    local dest="$REPO_PATH/klipper/"
+    mkdir -p "$dest"
+
+    if [ ! -f "$KLIPPER_CREDENTIALS_FILE" ]; then
+        log "ERROR: Klipper SMB credentials file not found: $KLIPPER_CREDENTIALS_FILE"
+        ERRORS=$((ERRORS + 1))
+        return 0
+    fi
+
+    local mnt="${KLIPPER_MOUNT_DIR:-/tmp/git-backup-klipper-mount}"
+    mkdir -p "$mnt"
+
+    # Defensive: clear a stale mount left by a previous crashed/killed run
+    mountpoint -q "$mnt" 2>/dev/null && umount "$mnt" 2>/dev/null
+
+    local mount_output
+    mount_output=$(mount -t cifs "//${KLIPPER_HOST}/${KLIPPER_SHARE}" "$mnt" \
+        -o "credentials=${KLIPPER_CREDENTIALS_FILE},ro,vers=3.0,uid=0,gid=0,file_mode=0644,dir_mode=0755" 2>&1) || {
+        log "ERROR: Cannot mount //${KLIPPER_HOST}/${KLIPPER_SHARE}"
+        [ -n "$mount_output" ] && log "  $mount_output"
+        HAOS_FAILED=1  # reuse the existing "a remote source failed" signal for notification purposes
+        ERRORS=$((ERRORS + 1))
+        return 0
+    }
+
+    local src="$mnt/${KLIPPER_BASE}/"
+    if [ ! -d "$src" ]; then
+        log "ERROR: $KLIPPER_BASE not found on share (looked in $src)"
+        ERRORS=$((ERRORS + 1))
+        umount "$mnt" 2>/dev/null
+        return 0
+    fi
+
+    # Build rsync args — excludes BEFORE includes, so a KLIPPER_EXCLUDE entry
+    # (e.g. a nested .git) wins even when it falls under a KLIPPER_INCLUDE
+    # pattern like config/**. Same ordering as backup_haos.
+    local rsync_args=(-a --delete)
+
+    IFS=',' read -ra klipper_excludes <<< "$KLIPPER_EXCLUDE"
+    for exc in "${klipper_excludes[@]}"; do
+        rsync_args+=(--exclude="$exc")
+    done
+
+    IFS=',' read -ra klipper_includes <<< "$KLIPPER_INCLUDE"
+    for inc in "${klipper_includes[@]}"; do
+        build_include_args "$inc" rsync_args
+    done
+    rsync_args+=(--include="*/")
+    rsync_args+=(--exclude="*")
+    rsync_args+=(--prune-empty-dirs)
+
+    [ "$DRY_RUN" = "yes" ] && rsync_args+=(--dry-run -v)
+    [ "$VERBOSE" = "yes" ] && rsync_args+=(-v)
+
+    if rsync "${rsync_args[@]}" "$src" "$dest" 2>&1; then
+        log "  Done"
+    else
+        log "WARNING: Klipper backup had errors (rsync exit code $?)"
+        ERRORS=$((ERRORS + 1))
+    fi
+
+    umount "$mnt" 2>&1 || log "WARNING: Failed to unmount $mnt"
+}
+
 # ── Backup Unraid System Config ──────────────────────────────────
 backup_unraid() {
     [ "$UNRAID_ENABLED" = "yes" ] || return 0
@@ -517,12 +633,64 @@ backup_unraid() {
     log "  Done"
 }
 
+# ── git-crypt: verify staged blobs are encrypted ─────────────────
+# Returns 0 if every path marked filter=git-crypt is staged as ciphertext.
+#
+# Deliberately does NOT invoke git-crypt: the binary being missing is exactly
+# the failure this detects, so the check must work without it.
+verify_staged_encryption() {
+    local fail=0 checked=0 path value header
+
+    # Symlinks (index mode 120000) can never be encrypted — git does not run
+    # clean/smudge filters on them, and their blob is the link target string,
+    # not file content. certbot's letsencrypt/live/*.pem are exactly this.
+    local -A is_symlink=()
+    while read -r mode _rest; do
+        [ "$mode" = "120000" ] || continue
+        is_symlink["${_rest#*$'\t'}"]=1
+    done < <(git ls-files -s --cached)
+
+    # NOTE: `git check-attr --stdin -z filter` — NOT `-- filter`. The `--`
+    # separates attributes from PATHNAMES, so `-- filter` makes git report
+    # "No attribute specified", the loop never runs, and this would pass
+    # everything. A check that never fires is worse than no check.
+    while IFS= read -r -d '' path && IFS= read -r -d '' _attr && IFS= read -r -d '' value; do
+        [ "$value" = "git-crypt" ] || continue
+        [ -n "${is_symlink[$path]:-}" ] && continue
+        checked=$((checked + 1))
+        # Raw staged blob: no smudge filter, i.e. exactly what would be committed.
+        # Checking the working tree proves nothing — git-crypt leaves it plaintext.
+        header=$(git cat-file -p ":$path" 2>/dev/null | head -c 10 | tr -d '\0')
+        if [ "${header:0:8}" != "GITCRYPT" ]; then
+            log "  PLAINTEXT: $path"
+            fail=1
+        fi
+    done < <(git ls-files -z --cached | git check-attr --stdin -z filter)
+
+    if [ "$checked" -eq 0 ]; then
+        log "  No git-crypt-protected paths matched — is .gitattributes correct?"
+        return 1
+    fi
+    [ "$fail" -eq 0 ]
+}
+
 # ── Git Commit & Push ────────────────────────────────────────────
 git_commit_and_push() {
     cd "$REPO_PATH" || { log "ERROR: Cannot cd to $REPO_PATH"; return 1; }
 
     # Stage all changes
     git add -A
+
+    # Verify nothing protected was staged in plaintext. The repo's own
+    # pre-commit hook enforces this too, but doing it here puts the failure in
+    # the plugin's log and notification rather than only in git's stderr.
+    if [ "${GITCRYPT_ENABLED:-no}" = "yes" ]; then
+        if ! verify_staged_encryption; then
+            log "ERROR: aborting — protected files would be committed as PLAINTEXT"
+            ERRORS=$((ERRORS + 1))
+            return 1
+        fi
+    fi
 
     # Check for changes
     if git diff --cached --quiet; then
@@ -607,6 +775,7 @@ show_dry_run_summary() {
     echo "Repo path:            $REPO_PATH"
     [ "$HAOS_ENABLED" = "yes" ] && echo "HAOS:                 enabled (host: $HAOS_HOST)"
     [ "$HAOS_FAILED" -eq 1 ]    && echo "HAOS:                 FAILED to connect"
+    [ "$KLIPPER_ENABLED" = "yes" ] && echo "Klipper:              enabled (host: $KLIPPER_HOST)"
     echo ""
     echo "Remove --dry-run to perform the actual backup."
 }
@@ -625,6 +794,7 @@ main() {
     backup_appdata
     backup_compose
     backup_haos
+    backup_klipper
     backup_unraid
 
     if [ "$DRY_RUN" = "yes" ]; then

@@ -1,0 +1,27 @@
+# Paths to purge from git history (filter-repo --invert-paths --paths-from-file)
+# AND add to .gitignore so the nightly backup stops re-adding them.
+#
+# Criterion: vendored third-party code, build caches, and abandoned service data.
+# None of it is configuration; none of it has restore value.
+#
+# Deliberately NOT here, despite being large:
+#   appdata/android-build/{adbkey,adbkey.pub,debug.keystore,env.fish}
+#       Only 4 files, but losing debug.keystore breaks app upgrades on the Shield
+#       (INSTALL_FAILED_UPDATE_INCOMPATIBLE) and losing adbkey forces a physical
+#       re-authorisation on the TV. These are exactly what must be backed up.
+#       Hence the three SDK subtrees are listed individually below, not the parent.
+#   appdata/cli-tools/home/.claude/projects/     -> encrypted instead (session transcripts)
+#   appdata/cli-tools/home/.claude/file-history/ -> encrypted instead (same data class)
+#   appdata/faster-whisper/*.py, transcribe.sh   -> real scripts, kept
+#
+# Counts are tracked-file counts as of 2026-07-28.
+
+appdata/faster-whisper/venv-diarize/            # 28,098  660M  python venv
+appdata/android-build/gradle-home/              # 18,086  gradle build cache
+appdata/cli-tools/home/.codex/.tmp/             #  9,907   87M  codex scratch plugin clone
+appdata/sourcegraph/                            #  6,866  176M  abandoned; no container exists
+appdata/android-build/sdk/                      #  5,259  android SDK
+haos/custom_components/hacs/hacs_frontend/      #  2,200   51M  HACS bundled JS, regenerated on install
+appdata/python-packages/                        #  1,172   18M  vendored site-packages
+appdata/android-build/jdk-21/                   #    443  JDK
+appdata/java/                                   #    376   34M  JDK

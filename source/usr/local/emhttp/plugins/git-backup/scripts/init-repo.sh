@@ -66,12 +66,53 @@ cat > .gitignore << 'GITIGNORE'
 *.pid
 *.sock
 *.lock
+
+# Vendored third-party code and build caches — not configuration, no restore
+# value, and a large false-positive surface for secret scanning. Tune per host.
+**/node_modules/
+**/site-packages/
+**/venv*/
+**/__pycache__/
+
+# git-crypt symmetric key — must NEVER be committed to the repo it protects.
+git-crypt.key
+*.git-crypt-key
 GITIGNORE
 echo "Created .gitignore"
 
 # 6. Create directory structure
 mkdir -p appdata compose haos unraid
 echo "Created backup directories: appdata/ compose/ haos/ unraid/"
+
+# 6b. Install the secrets guard (idempotent).
+#
+# Two layers, because the failure mode is silent: if git-crypt is unavailable
+# git's clean filter no-ops, the backup commits real credentials in plaintext,
+# and the run still looks successful.
+#   Layer 1 — filter.git-crypt.required: git treats a filter failure as fatal,
+#             so plaintext never reaches the index at all.
+#   Layer 2 — pre-commit hook: catches the case where the filter is configured
+#             but did not apply. Never calls git-crypt itself, since the binary
+#             being gone is precisely what it guards against.
+if [ "${GITCRYPT_ENABLED:-no}" = "yes" ]; then
+    git config filter.git-crypt.required true
+    echo "Set filter.git-crypt.required=true"
+
+    # Pin to an absolute path when one is configured: `git-crypt init` writes a
+    # bare name, which depends on PATH — and on Unraid /usr is rebuilt from RAM
+    # every boot, so cron can easily run without it.
+    if [ -n "${GITCRYPT_BIN:-}" ] && [ -x "${GITCRYPT_BIN}" ]; then
+        git config filter.git-crypt.clean  "$GITCRYPT_BIN clean"
+        git config filter.git-crypt.smudge "$GITCRYPT_BIN smudge"
+        git config diff.git-crypt.textconv "$GITCRYPT_BIN diff"
+        echo "Pinned git-crypt filter to $GITCRYPT_BIN"
+    fi
+fi
+
+if [ -f "$PLUGIN_DIR/scripts/pre-commit-hook.sh" ]; then
+    install -m 0755 "$PLUGIN_DIR/scripts/pre-commit-hook.sh" .git/hooks/pre-commit
+    echo "Installed pre-commit secrets guard"
+fi
 
 # 7. Initial commit
 git add .gitignore

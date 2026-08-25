@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name      "git-backup">
   <!ENTITY author    "yourzero">
-  <!ENTITY version   "2026.07.02">
+  <!ENTITY version   "2026.08.24">
   <!ENTITY repo      "https://raw.githubusercontent.com/yourzero/unraid-plugin-git-backup/main">
   <!ENTITY plugdir   "/usr/local/emhttp/plugins/&name;">
   <!ENTITY cfgdir    "/boot/config/plugins/&name;">
@@ -15,6 +15,20 @@
   support="https://github.com/yourzero/unraid-plugin-git-backup/issues">
 
 <CHANGES>
+###2026.08.24
+- New: back up Klipper/Moonraker 3D printer config, pulled read-only over CIFS/SMB (mounted on demand, unmounted after) rather than SSH — most Klipper installs (Mainsail/Fluidd/KIAUH) don't expose a uniform SSH story, but all of them share the printer host's home directory over Samba
+- New: default rules keep printer_data/config/** + systemd/*.env and strip Moonraker's own noise — dated config snapshots, gcodes/logs/database, and any nested .git (Moonraker auto-versions config/ locally; vendored macro libraries some installs git-clone in, e.g. jschuh/klipper-macros, are excluded the same way so they can never be committed as a gitlink)
+- New: WebUI section for Klipper (enable, host, share, base dir, include/exclude paths); the SMB credentials file itself is set up once by hand over SSH, no password field in the UI
+- Note: telegram_config.conf / telegram.conf (moonraker-telegram-bot's bot token) are protected by .gitattributes like the rest of the repo's secrets, if git-crypt is set up
+
+###2026.07.29
+- New: optional git-crypt support, so credentials in the backup repo are encrypted before they are pushed
+- New: two-layer secrets guard. `filter.git-crypt.required` makes git refuse to stage plaintext at all, and a pre-commit hook aborts the run if any protected file would still be committed unencrypted. The hook never calls git-crypt itself, because a missing binary is exactly what it guards against
+- New: git-crypt preflight in validate_prereqs — checks the binary, that the repo is unlocked, and that .gitattributes exists BEFORE gathering files, so it fails in seconds rather than after a full sync
+- New: warns if the git-crypt filter is configured with a bare command name instead of an absolute path (breaks under cron after a reboot, since Unraid rebuilds /usr from RAM)
+- Fix: init-repo.sh now ships a .gitignore that excludes node_modules/site-packages/venv build trees and the git-crypt key
+- Note: symlinks are skipped by the guard — git never applies clean/smudge filters to them, so they cannot be encrypted (e.g. certbot's letsencrypt/live/*.pem)
+
 ###2026.07.02
 - Fix: cron job silently failed every night (exit 127) due to an invalid user field in the installed cron.d entry
 - Fix: WebUI always showed "Cron: Inactive" even when the schedule was installed and running, due to a PHP exec() truncation bug in the status check
@@ -55,8 +69,17 @@ HAOS_USER="justin"
 HAOS_SSH_KEY="/root/.ssh/haos_backup_key"
 HAOS_INCLUDE="/config/configuration.yaml,/config/automations.yaml,/config/scripts.yaml,/config/scenes.yaml,/config/secrets.yaml,/config/customize.yaml,/config/known_devices.yaml,/config/groups.yaml,/config/packages/**,/config/custom_components/**,/config/blueprints/**,/config/www/**,/config/themes/**,/config/.storage/core.config_entries,/config/.storage/core.device_registry,/config/.storage/core.entity_registry,/config/.storage/core.area_registry,/config/.storage/lovelace*"
 HAOS_EXCLUDE="/config/home-assistant_v2.db,/config/home-assistant_v2.db-shm,/config/home-assistant_v2.db-wal,/config/tts/**,/config/deps/**,/config/.cloud/**,/config/backups/**"
+KLIPPER_ENABLED="no"
+KLIPPER_HOST=""
+KLIPPER_SHARE="home"
+KLIPPER_CREDENTIALS_FILE="/boot/config/plugins/git-backup/klipper-credentials"
+KLIPPER_BASE="printer_data"
+KLIPPER_INCLUDE="config/**,systemd/**,moonraker.asvc,backup-config.sh"
+KLIPPER_EXCLUDE=".git,.git/**,**/.git,backup/,config-backup/,database/,gcodes/,logs/,comms/,certs/,misc/,config/printer-[0-9]*.cfg,config/dynamic-[0-9]*.cfg,config/*.zip,config/macros/*.zip,config/macros2/*.zip,config/macros/jschuh/**,config/macros2/jschuh/**,config/.moonraker.conf.bkp,config/crowsnest.conf.*"
 UNRAID_ENABLED="yes"
 UNRAID_PATHS="/boot/config/go,/boot/config/network.cfg,/boot/config/ident.cfg,/boot/config/disk.cfg,/boot/config/share.cfg,/boot/config/smb-extra.conf,/boot/config/syslinux/syslinux.cfg"
+GITCRYPT_ENABLED="no"
+GITCRYPT_BIN="/usr/local/bin/git-crypt"
 CRON_SCHEDULE="0 3 * * *"
 DRY_RUN="no"
 NOTIFICATION="yes"
